@@ -1,0 +1,88 @@
+---
+title: "Assignment 2"
+author:
+  Christopher Bovolos (st.number 13979582)
+date: "22 November 2021"
+output:
+  pdf_document: default
+  word_document: default
+fontsize: 11pt
+highlight: tango
+---
+```{r, echo=FALSE,message=FALSE}
+library(fpp3)
+library(repr)
+library(IRdisplay)
+library(evaluate)
+library(crayon)
+library(pbdZMQ)
+library(devtools)
+library(uuid)
+library(digest)
+library(ggplot2)
+library(gtable)
+library(grid)
+library(prophet)
+```
+
+## \textcolor{blue}{Exercises}
+
+```{r}
+#Round function we will use later or not, ignore for now
+round2 = function(x, n) {
+  posneg = sign(x)
+  z = abs(x)*10^n
+  z = z + 0.5 + sqrt(.Machine$double.eps)
+  z = trunc(z)
+  z = z/10^n
+  z*posneg
+}
+
+```
+
+```{r, message=FALSE,echo = FALSE}
+train <- read.csv("sales_train_validation_afcs2021.csv")
+test <- read.csv("test.csv")
+
+#Preprocess the data
+
+train = as_tibble(cbind(nms = names(train), t(train)))
+test = as_tibble(cbind(nms = names(test), t(test)))
+
+test = test %>%  slice(2 : n()) %>% tibble::rowid_to_column("Day") %>% 
+  select(-nms)%>%  mutate(Day = Day +1913) %>% 
+  as_tsibble(index = Day) %>% mutate_each(funs(as.numeric), starts_with("V")) 
+
+train = train %>%  slice(2 : n()) %>% tibble::rowid_to_column("Day") %>% 
+  select(-nms)%>% 
+  as_tsibble(index = Day) %>% mutate_each(funs(as.numeric), starts_with("V"))
+
+#Bind test and train to create full set
+
+whole = bind_rows(train,test)
+
+
+
+```
+Actual code part and testing
+
+
+```{r}
+
+#Tests for the first day and second day
+train1 = train %>% select(V2)
+test1 = test %>% select(V2)
+whole1 = whole %>% select(V2)
+
+train2 = train %>% select(V3)
+test2 = test %>% select(V3)
+whole2 = whole %>% select(V3)
+
+
+fit1 = train1 %>% model( ETS(V2~error("M") + trend("N") + season("N")), ARIMA(), NAIVE(), MEAN(), SNAIVE())
+fit1 %>% forecast(h=28) %>% accuracy(whole1)
+
+fit2 = train2 %>% model( ETS(), ARIMA(), NAIVE(), MEAN(), SNAIVE())
+fit2 %>% forecast(h=28) %>% accuracy(whole2)
+
+```
