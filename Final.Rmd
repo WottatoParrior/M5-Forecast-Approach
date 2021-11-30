@@ -23,6 +23,7 @@ library(ggplot2)
 library(gtable)
 library(grid)
 library(prophet)
+# library(forecast)
 ```
 
 ## \textcolor{blue}{Exercises}
@@ -43,23 +44,61 @@ round2 = function(x, n) {
 ```{r, message=FALSE,echo = FALSE}
 train <- read.csv("sales_train_validation_afcs2021.csv")
 test <- read.csv("test.csv")
+calendar <- read.csv("calendar.csv")
+
 
 #Preprocess the data
-
 train = as_tibble(cbind(nms = names(train), t(train)))
 test = as_tibble(cbind(nms = names(test), t(test)))
+
+
 
 test = test %>%  slice(2 : n()) %>% tibble::rowid_to_column("Day") %>% 
   select(-nms)%>%  mutate(Day = Day +1913) %>% 
   as_tsibble(index = Day) %>% mutate_each(funs(as.numeric), starts_with("V")) 
 
+
 train = train %>%  slice(2 : n()) %>% tibble::rowid_to_column("Day") %>% 
   select(-nms)%>% 
   as_tsibble(index = Day) %>% mutate_each(funs(as.numeric), starts_with("V"))
 
+test =as_tsibble(merge(test, calendarTest, by.x = "Day", by.y= "Day"), index= "Day") 
+test  = rename(test, Date = date)
+test = test %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+
+train =as_tsibble(merge(train, calendarTrain, by.x = "Day", by.y= "Day"), index= "Day") 
+train  = rename(train, Date = date)
+train = train %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+
 #Bind test and train to create full set
 
 whole = bind_rows(train,test)
+
+
+#Preprocess the whole calendar
+#Make character variables to integers
+#Throw away garbage and keep the good stuff
+#
+
+calendar = calendar %>%  mutate(Event = case_when(
+    event_type_1 == "Sporting" ~ 1,
+    event_type_1 == "Cultural" ~ 2,
+    event_type_1 == "National" ~ 3,
+    event_type_1 == "Religious" ~ 4,
+    TRUE ~ 0
+  ),Day_type = case_when(
+    weekday == "Sunday" ~ 0,
+    TRUE~ 1
+  )) 
+
+calendarTest = calendar %>% slice(n()-27:0)%>% tibble::rowid_to_column("Day") %>%  mutate(Day = Day +1913)
+calendar = calendar %>% slice(0 : 27-n())
+calendarTrain = calendar %>% slice(0 : 27-n()) %>% tibble::rowid_to_column("Day") 
+#Merge sets test,train and whole with their calendars
+
+
+
+
 
 
 
@@ -69,20 +108,94 @@ Actual code part and testing
 
 ```{r}
 
-#Tests for the first day and second day
-train1 = train %>% select(V2)
-test1 = test %>% select(V2)
-whole1 = whole %>% select(V2)
-
-train2 = train %>% select(V3)
-test2 = test %>% select(V3)
-whole2 = whole %>% select(V3)
+#Tests for the first day and second day. For every series we select we must merge them with the calendarTrain
+train1 = train %>% select(V2,Date,month,Event,year)
 
 
-fit1 = train1 %>% model( ETS(V2~error("M") + trend("N") + season("N")), ARIMA(), NAIVE(), MEAN(), SNAIVE())
-fit1 %>% forecast(h=28) %>% accuracy(whole1)
 
-fit2 = train2 %>% model( ETS(), ARIMA(), NAIVE(), MEAN(), SNAIVE())
-fit2 %>% forecast(h=28) %>% accuracy(whole2)
+test1 = test %>% select(V2,Date,month,Event,year)
+
+
+whole1 = whole %>% select(V2,Date,month,Event,year)
+
+           
+           
+fit1 = train1 %>% model("arima" =ARIMA(V2~ Day + month +Event  + year + 1  +pdq(2,0,4)))
+
+
+
+report(fit1)
+forecast(fit1,test1) %>% accuracy(whole1)
+
+
 
 ```
+
+
+
+```{r}
+#Place to try more advanced methods(Prophet,Fourrier,NeuralNet)
+
+#This is seasonal decomposition with seasonal adjusted data, 0.79 RMSE
+#Best Results so far
+
+try = ts(train1$V2)
+
+try = as_tsibble(try) %>% rename( V2 = value)
+dcmp =  decomposition_model(
+  STL(V2 ~ season(period = 7)  , robust = TRUE),
+  ETS(season_adjust))
+
+
+
+fit = try %>% model(dcmp)
+fc=forecast(fit,test1)
+fc %>%accuracy(whole1)
+
+
+```
+
+
+```{r}
+#Fourier methods are here, cant make them work
+
+
+try = train %>% select(V2,Date,month,Event,year,Day_type)
+whole1 = whole %>% select(V2,Date,month,Event,year,Day_type)
+test1 = test %>% select(V2,Date,month,Event,year,Day_type)
+
+
+try  =as_tsibble(try, index= "Date") %>%  select(-Day)
+whole1 = as_tsibble(whole1, index= "Date") %>%  select(-Day)
+test1 =  as_tsibble(test1, index= "Date") %>%  select(-Day)
+FIT =try %>% model(
+                   try =ARIMA( V2 ~ Date +month +Event  + 1 + PDQ(0,0,0) +pdq(3,0,2) )
+                  )
+
+fc= forecast(FIT, test1)
+accuracy(fc, whole1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
