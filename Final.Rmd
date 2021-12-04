@@ -62,24 +62,9 @@ train = train %>%  slice(2 : n()) %>% tibble::rowid_to_column("Day") %>%
   select(-nms)%>% 
   as_tsibble(index = Day) %>% mutate_each(funs(as.numeric), starts_with("V"))
 
-test =as_tsibble(merge(test, calendarTest, by.x = "Day", by.y= "Day"), index= "Day") 
-test  = rename(test, Date = date)
-test = test %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
-
-train =as_tsibble(merge(train, calendarTrain, by.x = "Day", by.y= "Day"), index= "Day") 
-train  = rename(train, Date = date)
-train = train %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
-
-#Bind test and train to create full set
-
-whole = bind_rows(train,test)
-
-
 #Preprocess the whole calendar
 #Make character variables to integers
 #Throw away garbage and keep the good stuff
-#
-
 calendar = calendar %>%  mutate(Event = case_when(
     event_type_1 == "Sporting" ~ 1,
     event_type_1 == "Cultural" ~ 2,
@@ -94,44 +79,87 @@ calendar = calendar %>%  mutate(Event = case_when(
 calendarTest = calendar %>% slice(n()-27:0)%>% tibble::rowid_to_column("Day") %>%  mutate(Day = Day +1913)
 calendar = calendar %>% slice(0 : 27-n())
 calendarTrain = calendar %>% slice(0 : 27-n()) %>% tibble::rowid_to_column("Day") 
+
 #Merge sets test,train and whole with their calendars
+test =as_tsibble(merge(test, calendarTest, by.x = "Day", by.y= "Day"), index= "Day") 
+test  = rename(test, Date = date)
+test = test %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
 
+train =as_tsibble(merge(train, calendarTrain, by.x = "Day", by.y= "Day"), index= "Day") 
+train  = rename(train, Date = date)
+train = train %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
 
-
-
-
-
-
+#Bind test and train to create full set
+whole = bind_rows(train,test)
 ```
 Actual code part and testing
 
-
 ```{r}
-
+whole
+```
+```{r}
 #Tests for the first day and second day. For every series we select we must merge them with the calendarTrain
 train1 = train %>% select(V2,Date,month,Event,year)
 
-
-
 test1 = test %>% select(V2,Date,month,Event,year)
 
-
 whole1 = whole %>% select(V2,Date,month,Event,year)
-
-           
-           
+          
 fit1 = train1 %>% model("arima" =ARIMA(V2~ Day + month +Event  + year + 1  +pdq(2,0,4)))
-
-
 
 report(fit1)
 forecast(fit1,test1) %>% accuracy(whole1)
-
-
-
 ```
 
+```{r, warning=FALSE}
+#Loop through time series for Arima
 
+df_rmse_arima =data.frame()
+
+#Loop in all columns
+for(i in 2:ncol(whole)){
+
+#Loop only in first 200 columns
+# for(i in 2:200){
+  print(i)
+  
+  #create column name
+  V_value <- paste("V", i, sep = "")
+  
+  train1 = train %>% select(V_value,Date,month,Event,year)
+  test1 = test %>% select(V_value,Date,month,Event,year)
+  whole11 = whole %>% select(V_value,Date,month,Event,year)
+  
+  #select the column of the train set for the fit of the model
+  a <-assign(V_value, train1[1])
+  
+  fit111 = train1 %>% model("arima" =ARIMA(a ~ Day + month +Event  + year + 1  +pdq(2,0,4)))
+  
+  fore1  <- forecast(fit111,test1)
+  
+  #drop the column with the same name but wrong data
+  fore1_cleaned <- fore1[-c(5)]
+  #rename column so it would be the same for the accuracy function
+  names(fore1_cleaned)[3] <- V_value
+  #convert to fable fo the accuracy function
+  fbl <- as_fable(fore1_cleaned, response = V_value, distribution =V_value)
+  
+  current_accuracy <- accuracy(fbl,whole11)
+  
+  new_df_rmse_arima<-data.frame(V_value,current_accuracy[4])
+  
+  df_rmse_arima=rbind(df_rmse_arima, new_df_rmse_arima)
+}
+```
+
+```{r}
+#remove NaNs
+df_rmse_arima[is.na(df_rmse_arima)] <- 1
+
+df_rmse_arima
+unique(df_rmse_arima$RMSE)
+mean(unique(df_rmse_arima$RMSE))
+```
 
 ```{r}
 #Place to try more advanced methods(Prophet,Fourrier,NeuralNet)
@@ -151,15 +179,11 @@ dcmp =  decomposition_model(
 fit = try %>% model(dcmp)
 fc=forecast(fit,test1)
 fc %>%accuracy(whole1)
-
-
 ```
 
 
 ```{r}
 #Fourier methods are here, cant make them work
-
-
 try = train %>% select(V2,Date,month,Event,year,Day_type)
 whole1 = whole %>% select(V2,Date,month,Event,year,Day_type)
 test1 = test %>% select(V2,Date,month,Event,year,Day_type)
