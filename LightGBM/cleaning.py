@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-
+from sklearn.preprocessing import LabelEncoder
 
 def train_test(folder, file_name):
 
@@ -86,10 +86,10 @@ if __name__ == '__main__':
     y_val = test['sales']
 
     #write to csv
-    x_train.to_csv('x_train.csv', sep=';')
-    y_train.to_csv('y_train.csv', sep=';')
-    x_val.to_csv('x_val.csv', sep=';')
-    y_val.to_csv('y_val.csv', sep=';')
+    x_train.to_csv('x_train.csv', sep=';', index=False)
+    y_train.to_csv('y_train.csv', sep=';', index=False)
+    x_val.to_csv('x_val.csv', sep=';', index=False)
+    y_val.to_csv('y_val.csv', sep=';', index=False)
 
 
 
